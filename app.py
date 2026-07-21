@@ -3,25 +3,52 @@ import datetime
 import io
 import json
 import os
+import urllib.request
 from flask import Flask, jsonify, render_template_string, request, send_file
 
 app = Flask(__name__)
-DATA_FILE = "account_data.json"
+
+# =========================================================
+# 🔑 Supabase 정보 입력
+# =========================================================
+SUPABASE_URL = "https://whunucledtdqtxjqyoyg.supabase.co/rest/v1/"  # 본인 URL
+SUPABASE_KEY = "sb_publishable_gwv-otmc5S9ytdHRViA1uA_8HUaY68d"  # 본인 Publishable Key
+# =========================================================
+
+
+def supabase_request(method, endpoint, payload=None):
+  url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+  headers = {
+      "apikey": SUPABASE_KEY,
+      "Authorization": f"Bearer {SUPABASE_KEY}",
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+  }
+  data = json.dumps(payload).encode("utf-8") if payload else None
+  req = urllib.request.Request(url, data=data, headers=headers, method=method)
+  try:
+    with urllib.request.urlopen(req) as response:
+      res_body = response.read().decode("utf-8")
+      return json.loads(res_body) if res_body else []
+  except Exception as e:
+    print(f"DB Error: {e}")
+    return None
 
 
 def load_data():
-  if os.path.exists(DATA_FILE):
-    try:
-      with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-    except Exception:
-      pass
-  return {"owner": "홍길동", "balance": 0, "history": []}
+  res = supabase_request("GET", "account_data?id=eq.1")
+  if res and len(res) > 0:
+    return res[0]["content"]
+
+  default_data = {"owner": "홍길동", "balance": 0, "history": []}
+  supabase_request(
+      "POST", "account_data", {"id": 1, "content": default_data}
+  )
+  return default_data
 
 
 def save_data(data):
-  with open(DATA_FILE, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=4)
+  supabase_request("PATCH", "account_data?id=eq.1", {"content": data})
 
 
 def recalculate_balances(history):
@@ -51,6 +78,8 @@ HTML_TEMPLATE = """
         .balance { font-size: 1.6rem; font-weight: bold; color: #1F4E79; text-align: right; }
         
         input, select { width: 100%; padding: 10px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        label { font-weight: bold; font-size: 0.9rem; color: #333; margin-top: 6px; display: block; }
+        
         .btn-group { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
         button { flex: 1; min-width: 80px; padding: 10px; border: none; border-radius: 6px; font-size: 0.95rem; font-weight: bold; color: white; cursor: pointer; }
         
@@ -64,9 +93,16 @@ HTML_TEMPLATE = """
         .btn-cancel { background-color: #757575; }
 
         table { width: 100%; border-collapse: collapse; margin-top: 8px; background: white; }
-        th, td { border: 1px solid #e0e0e0; padding: 10px 6px; text-align: center; font-size: 0.95rem; }
+        th, td { border: 1px solid #e0e0e0; padding: 8px 4px; text-align: center; font-size: 0.9rem; }
         th { background-color: #1F4E79; color: white; }
         
+        /* 구분 열 너비 축소 */
+        .col-date { width: 22%; }
+        .col-type { width: 12%; white-space: nowrap; }
+        .col-note { width: 34%; }
+        .col-amount { width: 16%; }
+        .col-balance { width: 16%; }
+
         tbody tr { cursor: pointer; transition: background-color 0.2s; }
         tbody tr:hover { background-color: #f1f5f9; }
         tbody tr.selected-row { background-color: #FFF9C4 !important; border: 2px solid #FBC02D; font-weight: bold; }
@@ -78,19 +114,22 @@ HTML_TEMPLATE = """
         .text-right { text-align: right; }
 
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
-        .modal-content { background: white; margin: 15% auto; padding: 20px; width: 90%; max-width: 400px; border-radius: 12px; }
+        .modal-content { background: white; margin: 10% auto; padding: 20px; width: 90%; max-width: 400px; border-radius: 12px; }
         .selected-info { font-size: 0.85rem; color: #555; margin-bottom: 8px; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2>🏦 스마트 입출금 관리</h2>
+        <h2>🏦 클라우드 입출금 관리</h2>
         <div class="balance" id="balanceView">현재 잔액: 0 원</div>
     </div>
 
     <div class="card">
         <h3>📥📤 거래 입력</h3>
+        <label for="dateInput">날짜 (연월일)</label>
+        <input type="date" id="dateInput">
+        
         <input type="text" id="noteInput" placeholder="적요 (내용)">
         <input type="number" id="amountInput" placeholder="금액 (원)">
         <div class="btn-group">
@@ -123,10 +162,11 @@ HTML_TEMPLATE = """
         <table>
             <thead>
                 <tr>
-                    <th style="width: 15%;">구분</th>
-                    <th style="width: 40%;">적요</th>
-                    <th style="width: 22.5%;">금액</th>
-                    <th style="width: 22.5%;">잔액</th>
+                    <th class="col-date">날짜</th>
+                    <th class="col-type">구분</th>
+                    <th class="col-note">적요</th>
+                    <th class="col-amount">금액</th>
+                    <th class="col-balance">잔액</th>
                 </tr>
             </thead>
             <tbody id="historyTable"></tbody>
@@ -137,15 +177,22 @@ HTML_TEMPLATE = """
         <div class="modal-content">
             <h3>✏️ 선택 항목 수정</h3>
             <input type="hidden" id="editIndex">
+            
+            <label>날짜</label>
+            <input type="date" id="editDate">
+            
             <label>구분</label>
             <select id="editType">
                 <option value="입금">입금</option>
                 <option value="출금">출금</option>
             </select>
+            
             <label>적요</label>
             <input type="text" id="editNote">
+            
             <label>금액</label>
             <input type="number" id="editAmount">
+            
             <div class="btn-group" style="margin-top: 12px;">
                 <button class="btn-deposit" onclick="saveEdit()">수정 완료</button>
                 <button class="btn-cancel" onclick="closeEditModal()">취소</button>
@@ -156,6 +203,12 @@ HTML_TEMPLATE = """
     <script>
         let currentHistory = [];
         let selectedIndex = -1;
+
+        // 오늘 날짜를 YYYY-MM-DD 형식으로 설정
+        function setDefaultDate() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('dateInput').value = today;
+        }
 
         async function fetchHistory() {
             const res = await fetch('/api/data');
@@ -172,8 +225,10 @@ HTML_TEMPLATE = """
             for (let i = currentHistory.length - 1; i >= 0; i--) {
                 const item = currentHistory[i];
                 const typeClass = item.type === '입금' ? 'type-deposit' : 'type-withdraw';
+                const displayDate = item.date ? item.date.split(' ')[0] : '-';
                 
                 const row = `<tr id="row-${i}" onclick="selectRow(${i})">
+                    <td>${displayDate}</td>
                     <td class="${typeClass}">${item.type}</td>
                     <td class="text-left">${item.note}</td>
                     <td class="text-right">${item.amount.toLocaleString()}</td>
@@ -206,15 +261,17 @@ HTML_TEMPLATE = """
                 statusDiv.style.color = '#555';
             } else {
                 const item = currentHistory[selectedIndex];
-                statusDiv.innerText = `✅ 선택됨: [${item.type}] ${item.note} (${item.amount.toLocaleString()}원)`;
+                statusDiv.innerText = `✅ 선택됨: [${item.date.split(' ')[0]}] [${item.type}] ${item.note} (${item.amount.toLocaleString()}원)`;
                 statusDiv.style.color = '#1976D2';
             }
         }
 
         async function addTransaction(type) {
+            const dateInput = document.getElementById('dateInput');
             const noteInput = document.getElementById('noteInput');
             const amountInput = document.getElementById('amountInput');
             
+            const date = dateInput.value || new Date().toISOString().split('T')[0];
             const note = noteInput.value.trim() || '내용 없음';
             const amount = parseInt(amountInput.value);
 
@@ -226,11 +283,12 @@ HTML_TEMPLATE = """
             await fetch('/api/transaction', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, note, amount })
+                body: JSON.stringify({ date, type, note, amount })
             });
 
             noteInput.value = '';
             amountInput.value = '';
+            setDefaultDate();
             fetchHistory();
         }
 
@@ -241,6 +299,7 @@ HTML_TEMPLATE = """
             }
             const item = currentHistory[selectedIndex];
             document.getElementById('editIndex').value = selectedIndex;
+            document.getElementById('editDate').value = item.date ? item.date.split(' ')[0] : new Date().toISOString().split('T')[0];
             document.getElementById('editType').value = item.type;
             document.getElementById('editNote').value = item.note;
             document.getElementById('editAmount').value = item.amount;
@@ -253,6 +312,7 @@ HTML_TEMPLATE = """
 
         async function saveEdit() {
             const index = parseInt(document.getElementById('editIndex').value);
+            const date = document.getElementById('editDate').value;
             const type = document.getElementById('editType').value;
             const note = document.getElementById('editNote').value.trim() || '내용 없음';
             const amount = parseInt(document.getElementById('editAmount').value);
@@ -265,7 +325,7 @@ HTML_TEMPLATE = """
             await fetch('/api/transaction/edit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ index, type, note, amount })
+                body: JSON.stringify({ index, date, type, note, amount })
             });
 
             closeEditModal();
@@ -289,13 +349,8 @@ HTML_TEMPLATE = """
             fetchHistory();
         }
 
-        function downloadExcel() {
-            window.location.href = '/api/download_excel';
-        }
-
-        function backupData() {
-            window.location.href = '/api/backup';
-        }
+        function downloadExcel() { window.location.href = '/api/download_excel'; }
+        function backupData() { window.location.href = '/api/backup'; }
 
         async function restoreData(event) {
             const file = event.target.files[0];
@@ -304,11 +359,7 @@ HTML_TEMPLATE = """
             const formData = new FormData();
             formData.append('file', file);
 
-            const res = await fetch('/api/restore', {
-                method: 'POST',
-                body: formData
-            });
-
+            const res = await fetch('/api/restore', { method: 'POST', body: formData });
             const result = await res.json();
             if (result.status === 'success') {
                 alert('데이터가 성공적으로 복원되었습니다.');
@@ -319,6 +370,7 @@ HTML_TEMPLATE = """
             event.target.value = '';
         }
 
+        setDefaultDate();
         fetchHistory();
     </script>
 </body>
@@ -340,10 +392,9 @@ def get_data():
 def add_transaction():
   req = request.json
   data = load_data()
-  now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
   data["history"].append({
-      "date": now,
+      "date": req.get("date"),
       "type": req["type"],
       "note": req["note"],
       "amount": req["amount"],
@@ -362,6 +413,7 @@ def edit_transaction():
   idx = req["index"]
 
   if 0 <= idx < len(data["history"]):
+    data["history"][idx]["date"] = req.get("date")
     data["history"][idx]["type"] = req["type"]
     data["history"][idx]["note"] = req["note"]
     data["history"][idx]["amount"] = req["amount"]
@@ -405,7 +457,6 @@ def download_excel():
   mem = io.BytesIO()
   mem.write(output.getvalue().encode("utf-8"))
   mem.seek(0)
-
   filename = (
       f"account_history_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
   )
