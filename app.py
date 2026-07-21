@@ -11,8 +11,8 @@ app = Flask(__name__)
 # =========================================================
 # 🔑 Supabase 정보 입력
 # =========================================================
-SUPABASE_URL = "https://whunucledtdqtxjqyoyg.supabase.co/rest/v1/"  # 본인 URL
-SUPABASE_KEY = "sb_publishable_gwv-otmc5S9ytdHRViA1uA_8HUaY68d"  # 본인 Publishable Key
+SUPABASE_URL = "https://whunucledtdqtxjqyoyg.supabase.co"
+SUPABASE_KEY = "sb_publishable_gwv-otmc5S9ytdHRViA1uA_8HUaY68d"
 # =========================================================
 
 
