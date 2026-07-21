@@ -3,9 +3,6 @@ import datetime
 import io
 import json
 import os
-import socket
-import threading
-import webbrowser
 from flask import Flask, jsonify, render_template_string, request, send_file
 
 app = Flask(__name__)
@@ -38,17 +35,6 @@ def recalculate_balances(history):
   return running_balance
 
 
-def get_local_ip():
-  try:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 80))
-    ip = s.getsockname()[0]
-    s.close()
-    return ip
-  except Exception:
-    return "127.0.0.1"
-
-
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ko">
@@ -77,7 +63,6 @@ HTML_TEMPLATE = """
         .btn-main-delete { background-color: #D32F2F; }
         .btn-cancel { background-color: #757575; }
 
-        /* 테이블 및 마우스 클릭 선택 스타일 */
         table { width: 100%; border-collapse: collapse; margin-top: 8px; background: white; }
         th, td { border: 1px solid #e0e0e0; padding: 10px 6px; text-align: center; font-size: 0.95rem; }
         th { background-color: #1F4E79; color: white; }
@@ -86,14 +71,12 @@ HTML_TEMPLATE = """
         tbody tr:hover { background-color: #f1f5f9; }
         tbody tr.selected-row { background-color: #FFF9C4 !important; border: 2px solid #FBC02D; font-weight: bold; }
         
-        /* 입금 초록색, 출금 빨간색 구분 */
         .type-deposit { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; }
         .type-withdraw { color: #C62828; font-weight: bold; background-color: #FFEBEE; }
         
         .text-left { text-align: left; }
         .text-right { text-align: right; }
 
-        /* 수정 모달 팝업 */
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
         .modal-content { background: white; margin: 15% auto; padding: 20px; width: 90%; max-width: 400px; border-radius: 12px; }
         .selected-info { font-size: 0.85rem; color: #555; margin-bottom: 8px; }
@@ -150,7 +133,6 @@ HTML_TEMPLATE = """
         </table>
     </div>
 
-    <!-- 수정 모달 창 -->
     <div id="editModal" class="modal">
         <div class="modal-content">
             <h3>✏️ 선택 항목 수정</h3>
@@ -208,7 +190,7 @@ HTML_TEMPLATE = """
             }
             
             if (selectedIndex === index) {
-                selectedIndex = -1; // 토글 선택 해제
+                selectedIndex = -1;
             } else {
                 selectedIndex = index;
                 const currentRow = document.getElementById(`row-${index}`);
@@ -463,22 +445,6 @@ def restore_data():
   return jsonify({"status": "error"}), 400
 
 
-def open_browser():
-  # 서버 켜진 후 1.2초 뒤에 웹 브라우저 자동 오픈
-  webbrowser.open("http://127.0.0.1:5000")
-
-
 if __name__ == "__main__":
-  local_ip = get_local_ip()
-  print("\n========================================================")
-  print("🚀 입출금 관리 프로그램이 실행되었습니다!")
-  print("--------------------------------------------------------")
-  print("💻 PC에서 자동 브라우저가 열립니다.")
-  print(f"📱 스마트폰/타 기기 접속 주소: http://{local_ip}:5000")
-  print("========================================================\n")
-
-  # 브라우저 자동 열기 타이머 실행
-  threading.Timer(1.2, open_browser).start()
-
-  # 웹 서버 실행
-  app.run(host="0.0.0.0", port=5000)
+  port = int(os.environ.get("PORT", 5000))
+  app.run(host="0.0.0.0", port=port)
