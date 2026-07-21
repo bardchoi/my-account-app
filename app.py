@@ -11,8 +11,8 @@ app = Flask(__name__)
 # =========================================================
 # 🔑 Supabase 정보 입력
 # =========================================================
-SUPABASE_URL = "https://your-project-id.supabase.co"  # 본인 URL
-SUPABASE_KEY = "your-anon-key"  # 본인 Publishable Key
+SUPABASE_URL = "https://whunucledtdqtxjqyoyg.supabase.co/rest/v1/"  # 본인 URL
+SUPABASE_KEY = "sb_publishable_gwv-otmc5S9ytdHRViA1uA_8HUaY68d"  # 본인 Publishable Key
 # =========================================================
 
 
@@ -53,7 +53,12 @@ def save_data(data):
 
 def recalculate_balances(history):
   running_balance = 0
+  today = datetime.datetime.now().strftime("%Y-%m-%d")
   for item in history:
+    # 예전 백업 데이터에 date 항목이 없거나 None인 경우 기본값 처리
+    if not item.get("date"):
+      item["date"] = today
+
     if item.get("type") == "입금":
       running_balance += item.get("amount", 0)
     else:
@@ -96,7 +101,6 @@ HTML_TEMPLATE = """
         th, td { border: 1px solid #e0e0e0; padding: 8px 4px; text-align: center; font-size: 0.9rem; }
         th { background-color: #1F4E79; color: white; }
         
-        /* 구분 열 너비 축소 */
         .col-date { width: 22%; }
         .col-type { width: 12%; white-space: nowrap; }
         .col-note { width: 34%; }
@@ -204,7 +208,6 @@ HTML_TEMPLATE = """
         let currentHistory = [];
         let selectedIndex = -1;
 
-        // 오늘 날짜를 YYYY-MM-DD 형식으로 설정
         function setDefaultDate() {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('dateInput').value = today;
@@ -217,7 +220,7 @@ HTML_TEMPLATE = """
             selectedIndex = -1;
             updateSelectedStatus();
             
-            document.getElementById('balanceView').innerText = `현재 잔액: ${data.balance.toLocaleString()} 원`;
+            document.getElementById('balanceView').innerText = `현재 잔액: ${ (data.balance || 0).toLocaleString() } 원`;
             
             const tbody = document.getElementById('historyTable');
             tbody.innerHTML = '';
@@ -226,13 +229,15 @@ HTML_TEMPLATE = """
                 const item = currentHistory[i];
                 const typeClass = item.type === '입금' ? 'type-deposit' : 'type-withdraw';
                 const displayDate = item.date ? item.date.split(' ')[0] : '-';
+                const itemAmount = item.amount || 0;
+                const itemBalance = item.balance || 0;
                 
                 const row = `<tr id="row-${i}" onclick="selectRow(${i})">
                     <td>${displayDate}</td>
-                    <td class="${typeClass}">${item.type}</td>
-                    <td class="text-left">${item.note}</td>
-                    <td class="text-right">${item.amount.toLocaleString()}</td>
-                    <td class="text-right">${item.balance.toLocaleString()}</td>
+                    <td class="${typeClass}">${item.type || '-'}</td>
+                    <td class="text-left">${item.note || '-'}</td>
+                    <td class="text-right">${itemAmount.toLocaleString()}</td>
+                    <td class="text-right">${itemBalance.toLocaleString()}</td>
                 </tr>`;
                 tbody.innerHTML += row;
             }
@@ -261,7 +266,9 @@ HTML_TEMPLATE = """
                 statusDiv.style.color = '#555';
             } else {
                 const item = currentHistory[selectedIndex];
-                statusDiv.innerText = `✅ 선택됨: [${item.date.split(' ')[0]}] [${item.type}] ${item.note} (${item.amount.toLocaleString()}원)`;
+                const dateStr = item.date ? item.date.split(' ')[0] : '-';
+                const amountStr = (item.amount || 0).toLocaleString();
+                statusDiv.innerText = `✅ 선택됨: [${dateStr}] [${item.type}] ${item.note} (${amountStr}원)`;
                 statusDiv.style.color = '#1976D2';
             }
         }
@@ -300,9 +307,9 @@ HTML_TEMPLATE = """
             const item = currentHistory[selectedIndex];
             document.getElementById('editIndex').value = selectedIndex;
             document.getElementById('editDate').value = item.date ? item.date.split(' ')[0] : new Date().toISOString().split('T')[0];
-            document.getElementById('editType').value = item.type;
-            document.getElementById('editNote').value = item.note;
-            document.getElementById('editAmount').value = item.amount;
+            document.getElementById('editType').value = item.type || '입금';
+            document.getElementById('editNote').value = item.note || '';
+            document.getElementById('editAmount').value = item.amount || 0;
             document.getElementById('editModal').style.display = 'block';
         }
 
@@ -338,7 +345,7 @@ HTML_TEMPLATE = """
                 return;
             }
             const item = currentHistory[selectedIndex];
-            if (!confirm(`선택한 항목 [${item.note} - ${item.amount.toLocaleString()}원]을 삭제하시겠습니까?`)) return;
+            if (!confirm(`선택한 항목 [${item.note} - ${(item.amount||0).toLocaleString()}원]을 삭제하시겠습니까?`)) return;
 
             await fetch('/api/transaction/delete', {
                 method: 'POST',
@@ -365,7 +372,7 @@ HTML_TEMPLATE = """
                 alert('데이터가 성공적으로 복원되었습니다.');
                 fetchHistory();
             } else {
-                alert('복원 실패: 올바른 백업 파일이 아닙니다.');
+                alert('복원 실패: 파일 형식이나 내용을 확인해주세요.');
             }
             event.target.value = '';
         }
@@ -393,6 +400,9 @@ def add_transaction():
   req = request.json
   data = load_data()
 
+  if "history" not in data:
+    data["history"] = []
+
   data["history"].append({
       "date": req.get("date"),
       "type": req["type"],
@@ -412,7 +422,7 @@ def edit_transaction():
   data = load_data()
   idx = req["index"]
 
-  if 0 <= idx < len(data["history"]):
+  if "history" in data and 0 <= idx < len(data["history"]):
     data["history"][idx]["date"] = req.get("date")
     data["history"][idx]["type"] = req["type"]
     data["history"][idx]["note"] = req["note"]
@@ -429,7 +439,7 @@ def delete_transaction():
   data = load_data()
   idx = req["index"]
 
-  if 0 <= idx < len(data["history"]):
+  if "history" in data and 0 <= idx < len(data["history"]):
     data["history"].pop(idx)
     data["balance"] = recalculate_balances(data["history"])
     save_data(data)
@@ -487,13 +497,21 @@ def restore_data():
   file = request.files["file"]
   try:
     content = json.load(file)
-    if "history" in content:
-      content["balance"] = recalculate_balances(content["history"])
-      save_data(content)
-      return jsonify({"status": "success"})
-  except Exception:
-    pass
-  return jsonify({"status": "error"}), 400
+    # 리스트 형태로 백업된 파일이거나 dict 구조인 경우 모두 대응
+    if isinstance(content, list):
+      history = content
+      content = {"owner": "홍길동", "history": history}
+    elif isinstance(content, dict) and "history" in content:
+      history = content["history"]
+    else:
+      return jsonify({"status": "error", "message": "Invalid format"}), 400
+
+    content["balance"] = recalculate_balances(history)
+    save_data(content)
+    return jsonify({"status": "success"})
+  except Exception as e:
+    print("Restore Error:", e)
+    return jsonify({"status": "error"}), 400
 
 
 if __name__ == "__main__":
