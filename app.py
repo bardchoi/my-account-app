@@ -90,6 +90,12 @@ st.markdown(
         height: 38px !important;
         width: 100% !important;
     }
+    
+    .stDataFrame {
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -248,7 +254,11 @@ with col_select:
     sel = st.session_state.selected_row
 
     if sel is not None:
-      default_date = datetime.strptime(str(sel["date"]), "%Y-%m-%d").date()
+      try:
+        default_date = datetime.strptime(str(sel["date"]), "%Y-%m-%d").date()
+      except Exception:
+        default_date = datetime.now().date()
+
       default_desc = str(sel["description"])
       default_type = "입금" if "입금" in str(sel["type"]) else "출금"
       default_amount = int(sel["amount_val"])
@@ -289,7 +299,7 @@ with col_select:
           st.session_state.selected_row = None
           st.rerun()
     else:
-      st.info("👇 아래 선택 상자에서 수정할 거래를 선택하세요.")
+      st.info("👇 아래 거래 내역 목록에서 항목을 클릭하세요.")
 
 # --- [3열: 데이터 관리] ---
 with col_data:
@@ -334,73 +344,95 @@ with col_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록 (행별 색상 지정)
+# 5. 하단 거래 내역 목록
 # ==========================================
 with st.container(border=True):
   st.markdown(
-      '<div class="panel-header">📋 거래 내역 목록</div>',
+      '<div class="panel-header">📋 거래 내역 목록 <span'
+      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(원하는'
+      " 거래 항목을 클릭하면 위 '선택 항목 관리'로 정보가 채워집니다)</span></div>",
       unsafe_allow_html=True,
   )
 
   if not df.empty:
     df_calc = df.sort_values(by=["date", "id"], ascending=[True, True]).copy()
+
+    # 원본 수치 금액 저장
     df_calc["amount_val"] = df_calc["amount"]
 
+    # 잔액 계산
     df_calc["signed_amount"] = df_calc.apply(
         lambda r: r["amount"] if r["type"] == "입금" else -r["amount"], axis=1
     )
     df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
-    df_display = df_calc.sort_values(
-        by=["date", "id"], ascending=[False, False]
-    ).copy()
+    # 최신순 정렬 및 인덱스 재정리
+    df_display = (
+        df_calc.sort_values(by=["date", "id"], ascending=[False, False])
+        .reset_index(drop=True)
+        .copy()
+    )
 
-    # 표시용 포맷 생성
-    df_display["구분"] = df_display["type"].apply(
+    # 시각적 표시용 컬럼 생성
+    df_display["type_display"] = df_display["type"].apply(
         lambda x: "🟢 입금" if x == "입금" else "🔴 출금"
     )
-    df_display["금액"] = df_display.apply(
+    df_display["amount_display"] = df_display.apply(
         lambda r: f"+ {r['amount']:,} 원"
         if r["type"] == "입금"
         else f"- {r['amount']:,} 원",
         axis=1,
     )
-    df_display["잔액 (원)"] = df_display["balance"].apply(lambda x: f"{x:,} 원")
 
-    # 선택용 드롭다운 추가 (수정/삭제 연동)
-    options = {
-        row["id"]: (
-            f"[{row['date']}] {row['구분']} | {row['description']}"
-            f" ({row['금액']})"
-        )
-        for _, row in df_display.iterrows()
-    }
-    selected_id = st.selectbox(
-        "✏️ 수정/삭제할 항목 선택",
-        options=list(options.keys()),
-        format_func=lambda x: options[x],
-        index=0,
+    event = st.dataframe(
+        df_display[[
+            "id",
+            "date",
+            "type_display",
+            "description",
+            "amount_display",
+            "balance",
+        ]],
+        use_container_width=True,
+        height=400,
+        column_config={
+            "id": st.column_config.NumberColumn("ID"),
+            "date": st.column_config.DateColumn("날짜", format="YYYY-MM-DD"),
+            "type_display": st.column_config.TextColumn("구분"),
+            "description": st.column_config.TextColumn("적요"),
+            "amount_display": st.column_config.TextColumn("금액"),
+            "balance": st.column_config.NumberColumn(
+                "잔액 (원)", format="%d 원"
+            ),
+        },
+        hide_index=True,
+        selection_mode=["single-cell", "single-row"],
+        on_select="rerun",
     )
 
-    # 선택된 행 정보를 session_state에 저장
-    if selected_id:
-      selected_row_data = df_display[df_display["id"] == selected_id].iloc[0]
-      st.session_state.selected_row = selected_row_data.to_dict()
+    # 클릭 감지 보정 (cell 클릭과 row 클릭 모두 대응)
+    selected_cells = event.selection.get("cells", [])
+    selected_rows = event.selection.get("rows", [])
 
-    # 스타일 함수: 입금은 옅은 하늘색, 출금은 옅은 핑크색 배경
-    def highlight_rows(row):
-      if "입금" in str(row["구분"]):
-        return ["background-color: #e0f2fe; color: #0369a1;"] * len(row)
-      else:
-        return ["background-color: #ffe4e6; color: #be123c;"] * len(row)
+    clicked_idx = None
+    if selected_cells:
+      cell_info = selected_cells[0]
+      # Streamlit의 셀 위치 반환 구조 처리
+      if isinstance(cell_info, (list, tuple)):
+        clicked_idx = cell_info[0]
+      elif isinstance(cell_info, dict):
+        clicked_idx = cell_info.get("row")
+    elif selected_rows:
+      clicked_idx = selected_rows[0]
 
-    show_df = df_display[["id", "date", "구분", "description", "금액", "잔액 (원)"]]
-    show_df.columns = ["ID", "날짜", "구분", "적요", "금액", "잔액 (원)"]
+    if clicked_idx is not None and clicked_idx < len(df_display):
+      selected_data = df_display.iloc[clicked_idx].to_dict()
 
-    styled_df = show_df.style.apply(highlight_rows, axis=1)
-
-    # 스타일이 적용된 표 출력
-    st.dataframe(styled_df, use_container_width=True, height=400)
-
+      if (
+          st.session_state.selected_row is None
+          or st.session_state.selected_row.get("id") != selected_data["id"]
+      ):
+        st.session_state.selected_row = selected_data
+        st.rerun()
   else:
     st.info("표시할 거래 내역이 없습니다.")
