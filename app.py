@@ -344,7 +344,7 @@ with col_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록 (체크박스 제거 & 색상 구분)
+# 5. 하단 거래 내역 목록 (구분 열 색상 스타일 적용)
 # ==========================================
 with st.container(border=True):
   st.markdown(
@@ -373,10 +373,7 @@ with st.container(border=True):
         .copy()
     )
 
-    # 입/출금 시각적 색상 이모지 태그 및 금액 부호 설정
-    df_display["type_display"] = df_display["type"].apply(
-        lambda x: "🟢 입금" if x == "입금" else "🔴 출금"
-    )
+    df_display["type_display"] = df_display["type"]
     df_display["amount_display"] = df_display.apply(
         lambda r: f"+ {r['amount']:,} 원"
         if r["type"] == "입금"
@@ -384,16 +381,28 @@ with st.container(border=True):
         axis=1,
     )
 
-    # 체크박스 열 없는 데이터 에디터 모드 (수정 불가 읽기전용 설정)
+    # 출력용 데이터프레임 구성
+    view_df = df_display[[
+        "id",
+        "date",
+        "type_display",
+        "description",
+        "amount_display",
+        "balance",
+    ]].copy()
+
+    # 스타일 적용 함수: 구분 열에 따라 입금(옅은 하늘색), 출금(옅은 핑크색) 적용
+    def highlight_type(val):
+      if val == "입금":
+        return "background-color: #e0f2fe; color: #0369a1; font-weight: bold;"
+      elif val == "출금":
+        return "background-color: #ffe4e6; color: #be123c; font-weight: bold;"
+      return ""
+
+    styled_df = view_df.style.map(highlight_type, subset=["type_display"])
+
     event = st.dataframe(
-        df_display[[
-            "id",
-            "date",
-            "type_display",
-            "description",
-            "amount_display",
-            "balance",
-        ]],
+        styled_df,
         use_container_width=True,
         height=400,
         column_config={
