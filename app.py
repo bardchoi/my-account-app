@@ -123,18 +123,18 @@ def fetch_data():
     df_res = pd.DataFrame(response.data)
 
     if not df_res.empty:
-      # DB에서 description 컬럼을 가져오고, 혹시 다른 이름일 경우 보정
-      if "description" not in df_res.columns:
-        for possible_col in ["memo", "content", "note", "desc"]:
-          if possible_col in df_res.columns:
-            df_res["description"] = df_res[possible_col]
-            break
+      # note 컬럼을 최우선적으로 매핑하고 그 외 알려진 적요 컬럼 확인
+      for col in ["note", "description", "memo", "details", "content", "title"]:
+        if col in df_res.columns:
+          df_res["description"] = df_res[col]
+          break
 
-      # description이 없을 경우 빈 문자열 보정
       if "description" not in df_res.columns:
         df_res["description"] = ""
 
-      df_res["description"] = df_res["description"].fillna("").astype(str)
+      df_res["description"] = (
+          df_res["description"].fillna("").astype(str).str.strip()
+      )
 
     return df_res
   except Exception as e:
@@ -208,6 +208,7 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "입금",
                 "description": tx_desc,
+                "note": tx_desc,
                 "amount": tx_amount,
             }).execute()
             st.rerun()
@@ -220,6 +221,7 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "출금",
                 "description": tx_desc,
+                "note": tx_desc,
                 "amount": tx_amount,
             }).execute()
             st.rerun()
@@ -232,7 +234,9 @@ with tab_select:
     sel = st.session_state.selected_row
     if sel is not None:
       try:
-        default_date = datetime.strptime(str(sel["date"]), "%Y-%m-%d").date()
+        default_date = datetime.strptime(
+            str(sel["date"])[:10], "%Y-%m-%d"
+        ).date()
       except Exception:
         default_date = datetime.now().date()
 
@@ -261,6 +265,7 @@ with tab_select:
               "date": str(edit_date),
               "type": edit_type,
               "description": edit_desc,
+              "note": edit_desc,
               "amount": edit_amount,
           }).eq("id", int(sel["id"])).execute()
           st.session_state.selected_row = None
@@ -305,11 +310,35 @@ with tab_data:
       )
       if uploaded_file is not None:
         try:
-          restore_data = json.load(uploaded_file)
-          supabase.table("transactions").delete().neq("id", 0).execute()
-          supabase.table("transactions").insert(restore_data).execute()
-          st.success("복원 완료!")
-          st.rerun()
+          restore_json = json.load(uploaded_file)
+
+          # 백업 파일 구조 자동 분석 (history 배열 또는 일반 리스트 지원)
+          if isinstance(restore_json, dict) and "history" in restore_json:
+            records = restore_json["history"]
+          elif isinstance(restore_json, list):
+            records = restore_json
+          else:
+            records = []
+
+          # DB 저장을 위해 규격 통일 (note -> description 및 note 동시 생성)
+          formatted_records = []
+          for r in records:
+            desc = r.get("note") or r.get("description") or ""
+            formatted_records.append({
+                "date": str(r.get("date"))[:10],
+                "type": r.get("type", "출금"),
+                "description": desc,
+                "note": desc,
+                "amount": int(r.get("amount", 0)),
+            })
+
+          if formatted_records:
+            supabase.table("transactions").delete().neq("id", 0).execute()
+            supabase.table("transactions").insert(formatted_records).execute()
+            st.success("복원 완료!")
+            st.rerun()
+          else:
+            st.error("복원할 데이터 형식이 올바르지 않습니다.")
         except Exception as e:
           st.error(f"복원 실패: {e}")
 
@@ -349,7 +378,6 @@ with st.container(border=True):
         axis=1,
     )
 
-    # 출력용 DF
     view_df = df_display[[
         "id",
         "date",
