@@ -113,8 +113,8 @@ def fetch_data():
     response = (
         supabase.table("transactions")
         .select("*")
-        .order("date", desc=True)
-        .order("id", desc=True)
+        .order("date", desc=False)
+        .order("id", desc=False)
         .execute()
     )
     df_res = pd.DataFrame(response.data)
@@ -264,9 +264,11 @@ with tab_select:
       default_desc = str(sel.get("description", ""))
       default_type = "입금" if "입금" in str(sel.get("type", "")) else "출금"
       default_amount = int(sel.get("amount", 0))
+      default_seq = int(sel.get("seq", 0))
 
       sc1, sc2 = st.columns(2)
       with sc1:
+        st.number_input("순번", value=default_seq, disabled=True)
         edit_date = st.date_input("수정 날짜", value=default_date)
         edit_desc = st.text_input("수정 적요", value=default_desc)
       with sc2:
@@ -380,7 +382,7 @@ with tab_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록 (체크박스 제거 & 셀 클릭 매핑)
+# 5. 하단 거래 내역 목록
 # ==========================================
 with st.container(border=True):
   st.markdown(
@@ -392,35 +394,45 @@ with st.container(border=True):
 
   if not df.empty:
     try:
+      # 오름차순 기준 정렬 (가장 옛날 거래부터 1번 부여)
       df_calc = df.sort_values(
           by=["date", "id"], ascending=[True, True]
-      ).copy()
+      ).reset_index(drop=True)
 
+      # 1부터 시작하는 순번(seq) 부여
+      df_calc["seq"] = df_calc.index + 1
+
+      # 누적 잔액 계산
       df_calc["signed_amount"] = df_calc.apply(
           lambda r: r["amount"] if r["type"] == "입금" else -r["amount"], axis=1
       )
       df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
+      # 화면용 표시 (최신순 내림차순 정렬)
       df_display = (
           df_calc.sort_values(by=["date", "id"], ascending=[False, False])
           .reset_index(drop=True)
           .copy()
       )
 
+      # 금액 및 잔액 쉼표(,) 포맷팅
       df_display["amount_display"] = df_display.apply(
           lambda r: f"+ {r['amount']:,} 원"
           if r["type"] == "입금"
           else f"- {r['amount']:,} 원",
           axis=1,
       )
+      df_display["balance_display"] = df_display["balance"].apply(
+          lambda b: f"{b:,} 원"
+      )
 
       view_df = pd.DataFrame({
-          "id": df_display["id"],
+          "seq": df_display["seq"],
           "date": df_display["date"],
           "type": df_display["type"],
           "description": df_display["description"],
           "amount_display": df_display["amount_display"],
-          "balance": df_display["balance"],
+          "balance_display": df_display["balance_display"],
       })
 
       def highlight_type(val):
@@ -436,27 +448,24 @@ with st.container(border=True):
 
       styled_df = view_df.style.map(highlight_type, subset=["type"])
 
-      # selection_mode="single-cell"로 지정하여 좌측 체크박스 열을 완전히 삭제하고 단순 셀 클릭만 동작하게 설정
       event = st.dataframe(
           styled_df,
           use_container_width=True,
           height=400,
           column_config={
-              "id": st.column_config.NumberColumn("ID", width="small"),
+              "seq": st.column_config.NumberColumn("순번", width="small"),
               "date": st.column_config.TextColumn("날짜"),
               "type": st.column_config.TextColumn("구분"),
               "description": st.column_config.TextColumn("적요"),
               "amount_display": st.column_config.TextColumn("금액"),
-              "balance": st.column_config.NumberColumn(
-                  "잔액 (원)", format="%d 원"
-              ),
+              "balance_display": st.column_config.TextColumn("잔액 (원)"),
           },
           hide_index=True,
           on_select="rerun",
           selection_mode="single-cell",
       )
 
-      # 셀 클릭 감지 후 해당 행 전체 데이터 추출
+      # 셀 클릭 감지 후 선택 항목 저장
       clicked_idx = None
       if (
           event
