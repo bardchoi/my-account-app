@@ -243,25 +243,23 @@ with col_input:
         else:
           st.warning("적요와 금액을 입력하세요.")
 
-# --- [2열: 선택 항목 관리 (클릭한 행 정보 자동 반영 및 직접 수정)] ---
+# --- [2열: 선택 항목 관리 (목록 클릭 시 자동 폼 채움)] ---
 with col_select:
   with st.container(border=True):
     st.markdown(
         '<div class="panel-header">✏️ 선택 항목 관리 (목록 클릭 시'
-        " 자동입력)</div>",
+        " 채워짐)</div>",
         unsafe_allow_html=True,
     )
 
     sel = st.session_state.selected_row
 
     if sel is not None:
-      # 선택된 행의 기본값 세팅
       default_date = datetime.strptime(str(sel["date"]), "%Y-%m-%d").date()
       default_desc = str(sel["description"])
       default_type = "입금" if sel["type"] == "입금" else "출금"
       default_amount = int(sel["amount"])
 
-      # 폼 입력 창
       sc1, sc2, sc3 = st.columns([1, 1, 1.5])
       with sc1:
         edit_date = st.date_input("수정 날짜", value=default_date)
@@ -298,7 +296,7 @@ with col_select:
           st.session_state.selected_row = None
           st.rerun()
     else:
-      st.info("👇 아래 거래 목록에서 수정할 항목을 클릭하세요.")
+      st.info("👇 아래 거래 내역 목록에서 임의의 항목을 클릭하세요.")
 
 # --- [3열: 데이터 관리] ---
 with col_data:
@@ -343,13 +341,14 @@ with col_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록
+# 5. 하단 거래 내역 목록 (체크박스 완전히 제거)
 # ==========================================
 with st.container(border=True):
   st.markdown(
       '<div class="panel-header">📋 거래 내역 목록 <span'
-      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(항목을'
-      " 클릭하면 위 '선택 항목 관리'로 정보가 채워집니다)</span></div>",
+      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(원하는'
+      " 거래의 아무 위치나 클릭하면 위 '선택 항목 관리'로 정보가"
+      " 입력됩니다)</span></div>",
       unsafe_allow_html=True,
   )
 
@@ -364,6 +363,7 @@ with st.container(border=True):
         by=["date", "id"], ascending=[False, False]
     ).copy()
 
+    # 체크박스 없는 순수한 셀 클릭 감지 기능 (on_select="rerun" + selection_mode="single-cell")
     event = st.dataframe(
         df_display[["id", "date", "type", "description", "amount", "balance"]],
         use_container_width=True,
@@ -381,14 +381,14 @@ with st.container(border=True):
             "description": st.column_config.TextColumn("적요"),
         },
         hide_index=True,
-        selection_mode="single-row",
+        selection_mode="single-cell",  # 체크박스 없이 셀 클릭으로만 동작
         on_select="rerun",
     )
 
-    # 행 선택 시 session_state에 저장
-    selected_rows = event.selection.get("rows", [])
-    if selected_rows:
-      clicked_row_idx = selected_rows[0]
+    # 클릭된 셀의 행 정보를 가져와 session_state에 등록
+    selected_cells = event.selection.get("cells", [])
+    if selected_cells:
+      clicked_row_idx = selected_cells[0][0]
       selected_data = df_display.iloc[clicked_row_idx].to_dict()
 
       if (
