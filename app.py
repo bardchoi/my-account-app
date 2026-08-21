@@ -281,14 +281,15 @@ with tab_select:
     else:
       st.info("👇 아래 거래 내역 목록에서 수정할 항목을 클릭하세요.")
 
-# --- [탭 3: 데이터 관리] ---
+# --- [탭 3: 데이터 관리 (항상 표시되도록 수정)] ---
 with tab_data:
   with st.container(border=True):
+    d_col1, d_col2 = st.columns(2)
+
     if not df.empty:
       csv_data = df.to_csv(index=False).encode("utf-8-sig")
       json_data = df.to_json(orient="records", force_ascii=False)
 
-      d_col1, d_col2 = st.columns(2)
       with d_col1:
         st.download_button(
             "📊 엑셀 다운로드",
@@ -303,44 +304,44 @@ with tab_data:
             file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json",
         )
-
       st.write("---")
-      uploaded_file = st.file_uploader(
-          "📂 복원 파일 선택 (.json)", type=["json"]
-      )
-      if uploaded_file is not None:
-        try:
-          restore_json = json.load(uploaded_file)
+    else:
+      st.info("현재 저장된 거래 내역이 없습니다. 백업 파일(.json)을 아래에 올려 복원하세요.")
 
-          # 백업 파일 구조 자동 분석 (history 배열 또는 일반 리스트 지원)
-          if isinstance(restore_json, dict) and "history" in restore_json:
-            records = restore_json["history"]
-          elif isinstance(restore_json, list):
-            records = restore_json
-          else:
-            records = []
+    uploaded_file = st.file_uploader(
+        "📂 복원 파일 선택 (.json)", type=["json"]
+    )
+    if uploaded_file is not None:
+      try:
+        restore_json = json.load(uploaded_file)
 
-          # DB 저장을 위해 규격 통일 (note -> description 및 note 동시 생성)
-          formatted_records = []
-          for r in records:
-            desc = r.get("note") or r.get("description") or ""
-            formatted_records.append({
-                "date": str(r.get("date"))[:10],
-                "type": r.get("type", "출금"),
-                "description": desc,
-                "note": desc,
-                "amount": int(r.get("amount", 0)),
-            })
+        if isinstance(restore_json, dict) and "history" in restore_json:
+          records = restore_json["history"]
+        elif isinstance(restore_json, list):
+          records = restore_json
+        else:
+          records = []
 
-          if formatted_records:
-            supabase.table("transactions").delete().neq("id", 0).execute()
-            supabase.table("transactions").insert(formatted_records).execute()
-            st.success("복원 완료!")
-            st.rerun()
-          else:
-            st.error("복원할 데이터 형식이 올바르지 않습니다.")
-        except Exception as e:
-          st.error(f"복원 실패: {e}")
+        formatted_records = []
+        for r in records:
+          desc = r.get("note") or r.get("description") or ""
+          formatted_records.append({
+              "date": str(r.get("date"))[:10],
+              "type": r.get("type", "출금"),
+              "description": desc,
+              "note": desc,
+              "amount": int(r.get("amount", 0)),
+          })
+
+        if formatted_records:
+          supabase.table("transactions").delete().neq("id", 0).execute()
+          supabase.table("transactions").insert(formatted_records).execute()
+          st.success("복원 완료!")
+          st.rerun()
+        else:
+          st.error("복원할 데이터 형식이 올바르지 않습니다.")
+      except Exception as e:
+        st.error(f"복원 실패: {e}")
 
 st.write("")
 
