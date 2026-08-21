@@ -123,22 +123,18 @@ def fetch_data():
     df_res = pd.DataFrame(response.data)
 
     if not df_res.empty:
-      # 적요 컬럼 명칭 보정 (description, memo, content 등 대응)
-      desc_col = None
-      for col in ["description", "memo", "content", "note", "desc"]:
-        if col in df_res.columns:
-          desc_col = col
-          break
+      # DB에서 description 컬럼을 가져오고, 혹시 다른 이름일 경우 보정
+      if "description" not in df_res.columns:
+        for possible_col in ["memo", "content", "note", "desc"]:
+          if possible_col in df_res.columns:
+            df_res["description"] = df_res[possible_col]
+            break
 
-      if desc_col and desc_col != "description":
-        df_res["description"] = df_res[desc_col]
-      elif "description" not in df_res.columns:
+      # description이 없을 경우 빈 문자열 보정
+      if "description" not in df_res.columns:
         df_res["description"] = ""
 
-      # None이나 빈 문자열 처리
-      df_res["description"] = (
-          df_res["description"].fillna("").astype(str).str.strip()
-      )
+      df_res["description"] = df_res["description"].fillna("").astype(str)
 
     return df_res
   except Exception as e:
@@ -353,6 +349,7 @@ with st.container(border=True):
         axis=1,
     )
 
+    # 출력용 DF
     view_df = df_display[[
         "id",
         "date",
