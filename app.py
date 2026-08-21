@@ -97,7 +97,7 @@ st.markdown(
 
 
 # ==========================================
-# 2. Supabase DB 연동 (캐시 안전 처리)
+# 2. Supabase DB 연동
 # ==========================================
 def get_supabase():
   url = "https://whunucledtdqtxjqyoyg.supabase.co"
@@ -124,7 +124,6 @@ def fetch_data():
           columns=["id", "date", "type", "description", "amount"]
       )
 
-    # 컬럼 표준화
     possible_descs = [
         "description",
         "note",
@@ -150,7 +149,6 @@ def fetch_data():
     )
     df_res["type"] = df_res["type"].fillna("출금").astype(str)
 
-    # 날짜 예외 안전 처리
     def clean_date(d):
       try:
         return str(d)[:10]
@@ -344,7 +342,6 @@ with tab_data:
 
         formatted_records = []
         for r in records:
-          # 적요 값 필드 통합 검사
           desc_val = (
               r.get("description")
               or r.get("note")
@@ -352,8 +349,6 @@ with tab_data:
               or r.get("details")
               or ""
           )
-
-          # 금액 형변환 예외 처리
           try:
             amt_val = int(
                 float(str(r.get("amount", 0)).replace(",", "").strip())
@@ -361,7 +356,6 @@ with tab_data:
           except Exception:
             amt_val = 0
 
-          # 날짜 포맷팅
           raw_date = str(r.get("date", datetime.now().strftime("%Y-%m-%d")))[
               :10
           ]
@@ -374,7 +368,6 @@ with tab_data:
           })
 
         if formatted_records:
-          # 기존 모든 데이터 삭제 후 일괄 보복원
           supabase.table("transactions").delete().neq("id", -1).execute()
           supabase.table("transactions").insert(formatted_records).execute()
           st.success("복원 완벽 성공!")
@@ -387,7 +380,7 @@ with tab_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록
+# 5. 하단 거래 내역 목록 (체크박스 제거 & 셀 클릭 매핑)
 # ==========================================
 with st.container(border=True):
   st.markdown(
@@ -399,7 +392,6 @@ with st.container(border=True):
 
   if not df.empty:
     try:
-      # 누적 잔액 계산 (날짜/ID 기준 오름차순 정렬)
       df_calc = df.sort_values(
           by=["date", "id"], ascending=[True, True]
       ).copy()
@@ -409,7 +401,6 @@ with st.container(border=True):
       )
       df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
-      # 화면용 표시 (내림차순 정렬)
       df_display = (
           df_calc.sort_values(by=["date", "id"], ascending=[False, False])
           .reset_index(drop=True)
@@ -423,7 +414,6 @@ with st.container(border=True):
           axis=1,
       )
 
-      # 표에 보여줄 데이터 프레임 생성
       view_df = pd.DataFrame({
           "id": df_display["id"],
           "date": df_display["date"],
@@ -433,7 +423,6 @@ with st.container(border=True):
           "balance": df_display["balance"],
       })
 
-      # 스타일 지정
       def highlight_type(val):
         if val == "입금":
           return (
@@ -447,7 +436,7 @@ with st.container(border=True):
 
       styled_df = view_df.style.map(highlight_type, subset=["type"])
 
-      # 표 출력
+      # selection_mode="single-cell"로 지정하여 좌측 체크박스 열을 완전히 삭제하고 단순 셀 클릭만 동작하게 설정
       event = st.dataframe(
           styled_df,
           use_container_width=True,
@@ -464,27 +453,33 @@ with st.container(border=True):
           },
           hide_index=True,
           on_select="rerun",
-          selection_mode="single-row",
+          selection_mode="single-cell",
       )
 
-      # 행 클릭 감지
+      # 셀 클릭 감지 후 해당 행 전체 데이터 추출
+      clicked_idx = None
       if (
           event
           and hasattr(event, "selection")
           and event.selection
-          and "rows" in event.selection
+          and "cells" in event.selection
       ):
-        rows = event.selection["rows"]
-        if rows:
-          idx = rows[0]
-          if idx < len(df_display):
-            clicked_row = df_display.iloc[idx].to_dict()
-            if (
-                st.session_state.selected_row is None
-                or st.session_state.selected_row.get("id") != clicked_row["id"]
-            ):
-              st.session_state.selected_row = clicked_row
-              st.rerun()
+        cells = event.selection["cells"]
+        if cells and len(cells) > 0:
+          cell = cells[0]
+          if isinstance(cell, (list, tuple)):
+            clicked_idx = cell[0]
+          elif isinstance(cell, dict):
+            clicked_idx = cell.get("row")
+
+      if clicked_idx is not None and clicked_idx < len(df_display):
+        clicked_row = df_display.iloc[clicked_idx].to_dict()
+        if (
+            st.session_state.selected_row is None
+            or st.session_state.selected_row.get("id") != clicked_row["id"]
+        ):
+          st.session_state.selected_row = clicked_row
+          st.rerun()
 
     except Exception as e:
       st.error(f"목록 처리 중 오류: {e}")
