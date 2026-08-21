@@ -123,12 +123,6 @@ def fetch_data():
     df_res = pd.DataFrame(response.data)
 
     if not df_res.empty:
-      # note 컬럼을 최우선적으로 매핑하고 그 외 알려진 적요 컬럼 확인
-      for col in ["note", "description", "memo", "details", "content", "title"]:
-        if col in df_res.columns:
-          df_res["description"] = df_res[col]
-          break
-
       if "description" not in df_res.columns:
         df_res["description"] = ""
 
@@ -208,7 +202,6 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "입금",
                 "description": tx_desc,
-                "note": tx_desc,
                 "amount": tx_amount,
             }).execute()
             st.rerun()
@@ -221,7 +214,6 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "출금",
                 "description": tx_desc,
-                "note": tx_desc,
                 "amount": tx_amount,
             }).execute()
             st.rerun()
@@ -265,7 +257,6 @@ with tab_select:
               "date": str(edit_date),
               "type": edit_type,
               "description": edit_desc,
-              "note": edit_desc,
               "amount": edit_amount,
           }).eq("id", int(sel["id"])).execute()
           st.session_state.selected_row = None
@@ -281,7 +272,7 @@ with tab_select:
     else:
       st.info("👇 아래 거래 내역 목록에서 수정할 항목을 클릭하세요.")
 
-# --- [탭 3: 데이터 관리 (항상 표시되도록 수정)] ---
+# --- [탭 3: 데이터 관리] ---
 with tab_data:
   with st.container(border=True):
     d_col1, d_col2 = st.columns(2)
@@ -322,14 +313,20 @@ with tab_data:
         else:
           records = []
 
+        # DB 구조(description, date, type, amount)에 정확히 맞춘 포맷팅
         formatted_records = []
         for r in records:
-          desc = r.get("note") or r.get("description") or ""
+          desc_val = (
+              r.get("note")
+              or r.get("description")
+              or r.get("memo")
+              or r.get("details")
+              or ""
+          )
           formatted_records.append({
               "date": str(r.get("date"))[:10],
               "type": r.get("type", "출금"),
-              "description": desc,
-              "note": desc,
+              "description": str(desc_val),
               "amount": int(r.get("amount", 0)),
           })
 
