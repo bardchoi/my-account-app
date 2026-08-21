@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from supabase import create_client, Client
 import json
+import os
 
 # ==========================================
 # 1. 페이지 기본 설정 (와이드 레이아웃 & CSS 적용)
@@ -113,12 +114,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. Supabase 연동 설정
+# 2. Supabase 연동 설정 (Render 환경변수 및 secrets 호환)
 # ==========================================
 @st.cache_resource
 def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY", "")
     return create_client(url, key)
 
 supabase = init_supabase()
@@ -191,7 +192,7 @@ with col_input:
     with in_col1:
         tx_date = st.date_input("날짜", datetime.now(), label_visibility="collapsed")
     with in_col2:
-        tx_desc = st.text_input("적요", placeholder="적요 (예: 대창 농자재 영양제 구매 및 수리비 지출)", label_visibility="collapsed")
+        tx_desc = st.text_input("적요", placeholder="적요 입력", label_visibility="collapsed")
         
     in_col3, in_btn1, in_btn2 = st.columns([1.8, 1, 1])
     with in_col3:
@@ -226,7 +227,6 @@ with col_select:
     st.markdown('<div class="panel-title">📊 선택 항목 관리</div>', unsafe_allow_html=True)
     
     if not df.empty:
-        # 선택용 드롭다운 목록 생성
         options = {row['id']: f"[{row['date']}] {row['type']} | {row['description']} ({row['amount']:,}원)" for _, row in df.iterrows()}
         selected_option = st.selectbox("항목 선택", options=list(options.keys()), format_func=lambda x: options[x], label_visibility="collapsed")
         
@@ -247,22 +247,18 @@ with col_data:
     st.markdown('<div class="panel-title">⚙️ 데이터 관리</div>', unsafe_allow_html=True)
     
     if not df.empty:
-        # CSV 다운로드 (엑셀 저장)
         csv_data = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📊 엑셀 저장", data=csv_data, file_name=f"입출금내역_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
         
         d_col1, d_col2 = st.columns(2)
         with d_col1:
-            # JSON 백업 파일 생성
             json_data = df.to_json(orient="records", force_ascii=False)
             st.download_button("💾 백업", data=json_data, file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.json", mime="application/json")
         with d_col2:
-            # 데이터 복원용 팝업/업로더
             uploaded_file = st.file_uploader("📂 복원", type=["json"], label_visibility="collapsed")
             if uploaded_file is not None:
                 try:
                     restore_data = json.load(uploaded_file)
-                    # 기존 데이터 삭제 후 복원
                     supabase.table("transactions").delete().neq("id", 0).execute()
                     supabase.table("transactions").insert(restore_data).execute()
                     st.success("복원 완료!")
@@ -278,19 +274,15 @@ st.write("") # 간격 조정
 st.markdown('<div class="panel-title">📋 거래 내역 목록</div>', unsafe_allow_html=True)
 
 if not df.empty:
-    # 누적 잔액 계산 (날짜 오름차순 기준 계산 후 표시)
     df_calc = df.sort_values(by=["date", "id"], ascending=[True, True]).copy()
     df_calc['signed_amount'] = df_calc.apply(lambda r: r['amount'] if r['type'] == '입금' else -r['amount'], axis=1)
     df_calc['balance'] = df_calc['signed_amount'].cumsum()
     
-    # 다시 최신순 정렬
     df_display = df_calc.sort_values(by=["date", "id"], ascending=[False, False]).copy()
     
-    # 보기 좋은 컬럼명 변경
     display_df = df_display[['date', 'type', 'description', 'amount', 'balance']].copy()
     display_df.columns = ['날짜', '구분', '적요', '금액 (원)', '잔액 (원)']
     
-    # 테이블 표시 (고정 높이 380px 적용으로 내부 스크롤 형성)
     st.dataframe(
         display_df,
         use_container_width=True,
