@@ -344,13 +344,13 @@ with col_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록
+# 5. 하단 거래 내역 목록 (체크박스 제거 & 색상 구분)
 # ==========================================
 with st.container(border=True):
   st.markdown(
       '<div class="panel-header">📋 거래 내역 목록 <span'
-      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(원하는'
-      " 거래 항목을 클릭하면 위 '선택 항목 관리'로 정보가 채워집니다)</span></div>",
+      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(항목을'
+      " 클릭하면 위 '선택 항목 관리'로 채워집니다)</span></div>",
       unsafe_allow_html=True,
   )
 
@@ -366,14 +366,14 @@ with st.container(border=True):
     )
     df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
-    # 최신순 정렬 및 인덱스 재정리
+    # 최신순 정렬 및 인덱스 리셋
     df_display = (
         df_calc.sort_values(by=["date", "id"], ascending=[False, False])
         .reset_index(drop=True)
         .copy()
     )
 
-    # 시각적 표시용 컬럼 생성
+    # 입/출금 시각적 색상 이모지 태그 및 금액 부호 설정
     df_display["type_display"] = df_display["type"].apply(
         lambda x: "🟢 입금" if x == "입금" else "🔴 출금"
     )
@@ -384,6 +384,7 @@ with st.container(border=True):
         axis=1,
     )
 
+    # 체크박스 열 없는 데이터 에디터 모드 (수정 불가 읽기전용 설정)
     event = st.dataframe(
         df_display[[
             "id",
@@ -406,24 +407,20 @@ with st.container(border=True):
             ),
         },
         hide_index=True,
-        selection_mode=["single-cell", "single-row"],
         on_select="rerun",
+        selection_mode="single-cell",
     )
 
-    # 클릭 감지 보정 (cell 클릭과 row 클릭 모두 대응)
-    selected_cells = event.selection.get("cells", [])
-    selected_rows = event.selection.get("rows", [])
-
+    # 클릭된 위치 정보 파싱
+    selection = event.selection
     clicked_idx = None
-    if selected_cells:
-      cell_info = selected_cells[0]
-      # Streamlit의 셀 위치 반환 구조 처리
-      if isinstance(cell_info, (list, tuple)):
-        clicked_idx = cell_info[0]
-      elif isinstance(cell_info, dict):
-        clicked_idx = cell_info.get("row")
-    elif selected_rows:
-      clicked_idx = selected_rows[0]
+
+    if selection and "cells" in selection and len(selection["cells"]) > 0:
+      cell = selection["cells"][0]
+      if isinstance(cell, (list, tuple)):
+        clicked_idx = cell[0]
+      elif isinstance(cell, dict):
+        clicked_idx = cell.get("row")
 
     if clicked_idx is not None and clicked_idx < len(df_display):
       selected_data = df_display.iloc[clicked_idx].to_dict()
