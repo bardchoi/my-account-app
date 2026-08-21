@@ -5,7 +5,7 @@ import streamlit as st
 from supabase import Client, create_client
 
 # ==========================================
-# 1. 페이지 기본 설정 및 CSS
+# 1. 페이지 기본 설정 및 모바일 최적화 CSS
 # ==========================================
 st.set_page_config(
     page_title="입출금 관리 프로그램",
@@ -17,11 +17,12 @@ st.set_page_config(
 st.markdown(
     """
 <style>
+    /* 여백 최소화 및 모바일 대응 */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0rem !important;
-        padding-left: 1.5rem !important;
-        padding-right: 1.5rem !important;
+        padding-top: 0.8rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
         max-width: 100% !important;
     }
     
@@ -34,63 +35,64 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
 
+    /* 상단 헤더 */
     .app-header {
         background-color: #0f172a;
         color: #f8fafc;
-        padding: 10px 18px;
+        padding: 8px 14px;
         border-radius: 8px;
-        font-size: 1.15rem;
+        font-size: 1.05rem;
         font-weight: 700;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
     }
     .app-header .badge {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         background-color: #334155;
         color: #cbd5e1;
-        padding: 2px 8px;
-        border-radius: 12px;
-        font-weight: 400;
+        padding: 2px 6px;
+        border-radius: 10px;
     }
 
+    /* 요약 카드 디자인 */
     .stat-card {
         border: 1px solid #cbd5e1;
         border-radius: 8px;
-        padding: 12px 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        padding: 8px 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        margin-bottom: 4px;
     }
     .card-in { background-color: #f0fdf4; border-color: #bbf7d0; }
     .card-out { background-color: #fef2f2; border-color: #fecaca; }
     .card-bal { background-color: #f0f9ff; border-color: #bae6fd; }
     
-    .stat-title { font-size: 0.8rem; color: #475569; font-weight: 600; margin-bottom: 4px; }
-    .stat-value { font-size: 1.35rem; font-weight: 700; }
+    .stat-title { font-size: 0.75rem; color: #475569; font-weight: 600; }
+    .stat-value { font-size: 1.15rem; font-weight: 700; }
     .val-in { color: #166534; }
     .val-out { color: #991b1b; }
     .val-bal { color: #075985; }
 
     .panel-header {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 700;
         color: #1e293b;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
 
-    div[data-baseweb="input"] {
-        background-color: #ffffff !important;
-        border-color: #cbd5e1 !important;
-    }
-    
+    /* 버튼 글자 짤림 방지 및 모바일 자동 크기 조절 */
     .stButton > button {
         border-radius: 6px !important;
         font-weight: 600 !important;
-        font-size: 0.8rem !important;
+        font-size: 0.82rem !important;
         height: 38px !important;
         width: 100% !important;
+        white-space: nowrap !important;
+        padding: 0 8px !important;
     }
-    
+
+    /* 데이터프레임 스타일 */
     .stDataFrame {
         background-color: #ffffff;
         border: 1px solid #cbd5e1;
@@ -129,7 +131,6 @@ def fetch_data():
     return pd.DataFrame(columns=["id", "date", "type", "description", "amount"])
 
 
-# Session State 초기화
 if "selected_row" not in st.session_state:
   st.session_state.selected_row = None
 
@@ -139,8 +140,8 @@ if "selected_row" not in st.session_state:
 st.markdown(
     """
 <div class="app-header">
-    <span>🏦 입출금 관리 프로그램</span>
-    <span class="badge">Cloud Synced</span>
+    <span>🏦 입출금 관리</span>
+    <span class="badge">Cloud</span>
 </div>
 """,
     unsafe_allow_html=True,
@@ -155,104 +156,69 @@ balance = total_in - total_out
 c1, c2, c3 = st.columns(3)
 with c1:
   st.markdown(
-      f"""
-    <div class="stat-card card-in">
-        <div class="stat-title">📥 총 입금액</div>
-        <div class="stat-value val-in">₩ {total_in:,.0f}</div>
-    </div>
-    """,
+      f"""<div class="stat-card card-in"><div class="stat-title">📥 총 입금</div><div class="stat-value val-in">₩ {total_in:,.0f}</div></div>""",
       unsafe_allow_html=True,
   )
 with c2:
   st.markdown(
-      f"""
-    <div class="stat-card card-out">
-        <div class="stat-title">📤 총 출금액</div>
-        <div class="stat-value val-out">₩ {total_out:,.0f}</div>
-    </div>
-    """,
+      f"""<div class="stat-card card-out"><div class="stat-title">📤 총 출금</div><div class="stat-value val-out">₩ {total_out:,.0f}</div></div>""",
       unsafe_allow_html=True,
   )
 with c3:
   st.markdown(
-      f"""
-    <div class="stat-card card-bal">
-        <div class="stat-title">💰 현재 잔액</div>
-        <div class="stat-value val-bal">₩ {balance:,.0f}</div>
-    </div>
-    """,
+      f"""<div class="stat-card card-bal"><div class="stat-title">💰 현재 잔액</div><div class="stat-value val-bal">₩ {balance:,.0f}</div></div>""",
       unsafe_allow_html=True,
   )
 
 st.write("")
 
 # ==========================================
-# 4. 중앙 제어 컨트롤 영역
+# 4. 모바일/PC 겸용 컨트롤 영역 (탭 방식 적용)
 # ==========================================
-col_input, col_select, col_data = st.columns([1.5, 1.8, 1.0])
+tab_input, tab_select, tab_data = st.tabs(
+    ["📥 신규 입력", "✏️ 선택 항목 수정/삭제", "⚙️ 데이터 관리"]
+)
 
-# --- [1열: 신규 거래 입력] ---
-with col_input:
+# --- [탭 1: 신규 거래 입력] ---
+with tab_input:
   with st.container(border=True):
-    st.markdown(
-        '<div class="panel-header">📥 신규 거래 입력</div>',
-        unsafe_allow_html=True,
-    )
-
-    in_col1, in_col2 = st.columns([1, 1.8])
+    in_col1, in_col2 = st.columns([1, 1])
     with in_col1:
-      tx_date = st.date_input(
-          "신규 날짜", datetime.now(), label_visibility="collapsed"
-      )
+      tx_date = st.date_input("날짜", datetime.now())
+      tx_amount = st.number_input("금액 (원)", min_value=0, step=1000, value=0)
     with in_col2:
-      tx_desc = st.text_input(
-          "신규 적요", placeholder="적요 입력", label_visibility="collapsed"
-      )
+      tx_desc = st.text_input("적요", placeholder="내용 입력")
+      st.write("")
+      btn_c1, btn_c2 = st.columns(2)
+      with btn_c1:
+        if st.button("📥 입금 저장", type="primary"):
+          if tx_desc and tx_amount > 0:
+            supabase.table("transactions").insert({
+                "date": str(tx_date),
+                "type": "입금",
+                "description": tx_desc,
+                "amount": tx_amount,
+            }).execute()
+            st.rerun()
+          else:
+            st.warning("적요와 금액을 입력하세요.")
+      with btn_c2:
+        if st.button("📤 출금 저장"):
+          if tx_desc and tx_amount > 0:
+            supabase.table("transactions").insert({
+                "date": str(tx_date),
+                "type": "출금",
+                "description": tx_desc,
+                "amount": tx_amount,
+            }).execute()
+            st.rerun()
+          else:
+            st.warning("적요와 금액을 입력하세요.")
 
-    in_col3, in_btn1, in_btn2 = st.columns([1.6, 1, 1])
-    with in_col3:
-      tx_amount = st.number_input(
-          "신규 금액",
-          min_value=0,
-          step=1000,
-          value=0,
-          label_visibility="collapsed",
-      )
-    with in_btn1:
-      if st.button("📥 입금", type="primary"):
-        if tx_desc and tx_amount > 0:
-          supabase.table("transactions").insert({
-              "date": str(tx_date),
-              "type": "입금",
-              "description": tx_desc,
-              "amount": tx_amount,
-          }).execute()
-          st.rerun()
-        else:
-          st.warning("적요와 금액을 입력하세요.")
-    with in_btn2:
-      if st.button("📤 출금"):
-        if tx_desc and tx_amount > 0:
-          supabase.table("transactions").insert({
-              "date": str(tx_date),
-              "type": "출금",
-              "description": tx_desc,
-              "amount": tx_amount,
-          }).execute()
-          st.rerun()
-        else:
-          st.warning("적요와 금액을 입력하세요.")
-
-# --- [2열: 선택 항목 관리] ---
-with col_select:
+# --- [탭 2: 선택 항목 관리] ---
+with tab_select:
   with st.container(border=True):
-    st.markdown(
-        '<div class="panel-header">✏️ 선택 항목 관리</div>',
-        unsafe_allow_html=True,
-    )
-
     sel = st.session_state.selected_row
-
     if sel is not None:
       try:
         default_date = datetime.strptime(str(sel["date"]), "%Y-%m-%d").date()
@@ -263,25 +229,23 @@ with col_select:
       default_type = "입금" if "입금" in str(sel["type"]) else "출금"
       default_amount = int(sel["amount_val"])
 
-      sc1, sc2, sc3 = st.columns([1, 1, 1.5])
+      sc1, sc2 = st.columns(2)
       with sc1:
         edit_date = st.date_input("수정 날짜", value=default_date)
+        edit_desc = st.text_input("수정 적요", value=default_desc)
       with sc2:
         edit_type = st.selectbox(
             "구분",
             options=["입금", "출금"],
             index=0 if default_type == "입금" else 1,
         )
-      with sc3:
-        edit_desc = st.text_input("수정 적요", value=default_desc)
-
-      sc4, sc5, sc6 = st.columns([1.5, 1, 1])
-      with sc4:
         edit_amount = st.number_input(
             "수정 금액", min_value=0, step=1000, value=default_amount
         )
-      with sc5:
-        if st.button("💾 수정 저장", type="primary"):
+
+      s_btn1, s_btn2 = st.columns(2)
+      with s_btn1:
+        if st.button("💾 수정 완료", type="primary"):
           supabase.table("transactions").update({
               "date": str(edit_date),
               "type": edit_type,
@@ -291,45 +255,42 @@ with col_select:
           st.session_state.selected_row = None
           st.success("수정 완료!")
           st.rerun()
-      with sc6:
-        if st.button("🗑️ 삭제"):
+      with s_btn2:
+        if st.button("🗑️ 항목 삭제"):
           supabase.table("transactions").delete().eq(
               "id", int(sel["id"])
           ).execute()
           st.session_state.selected_row = None
           st.rerun()
     else:
-      st.info("👇 아래 거래 내역 목록에서 항목을 클릭하세요.")
+      st.info("👇 아래 거래 내역 목록에서 수정할 항목을 터치/클릭하세요.")
 
-# --- [3열: 데이터 관리] ---
-with col_data:
+# --- [탭 3: 데이터 관리] ---
+with tab_data:
   with st.container(border=True):
-    st.markdown(
-        '<div class="panel-header">⚙️ 데이터 관리</div>',
-        unsafe_allow_html=True,
-    )
-
     if not df.empty:
       csv_data = df.to_csv(index=False).encode("utf-8-sig")
+      json_data = df.to_json(orient="records", force_ascii=False)
+
       d_col1, d_col2 = st.columns(2)
       with d_col1:
         st.download_button(
-            "📊 엑셀",
+            "📊 엑셀 다운로드",
             data=csv_data,
             file_name=f"입출금내역_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
         )
       with d_col2:
-        json_data = df.to_json(orient="records", force_ascii=False)
         st.download_button(
-            "💾 백업",
+            "💾 백업 파일 다운",
             data=json_data,
             file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json",
         )
 
+      st.write("---")
       uploaded_file = st.file_uploader(
-          "📂 복원", type=["json"], label_visibility="collapsed"
+          "📂 복원 파일 선택 (.json)", type=["json"]
       )
       if uploaded_file is not None:
         try:
@@ -344,29 +305,25 @@ with col_data:
 st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 목록 (구분 열 색상 스타일 적용)
+# 5. 하단 거래 내역 목록
 # ==========================================
 with st.container(border=True):
   st.markdown(
       '<div class="panel-header">📋 거래 내역 목록 <span'
-      ' style="font-size:0.75rem; font-weight:normal; color:#64748b;">(항목을'
-      " 클릭하면 위 '선택 항목 관리'로 채워집니다)</span></div>",
+      ' style="font-size:0.7rem; font-weight:normal; color:#64748b;">(항목 터치'
+      " 시 수정 탭으로 연결)</span></div>",
       unsafe_allow_html=True,
   )
 
   if not df.empty:
     df_calc = df.sort_values(by=["date", "id"], ascending=[True, True]).copy()
-
-    # 원본 수치 금액 저장
     df_calc["amount_val"] = df_calc["amount"]
 
-    # 잔액 계산
     df_calc["signed_amount"] = df_calc.apply(
         lambda r: r["amount"] if r["type"] == "입금" else -r["amount"], axis=1
     )
     df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
-    # 최신순 정렬 및 인덱스 리셋
     df_display = (
         df_calc.sort_values(by=["date", "id"], ascending=[False, False])
         .reset_index(drop=True)
@@ -381,7 +338,6 @@ with st.container(border=True):
         axis=1,
     )
 
-    # 출력용 데이터프레임 구성
     view_df = df_display[[
         "id",
         "date",
@@ -391,7 +347,6 @@ with st.container(border=True):
         "balance",
     ]].copy()
 
-    # 스타일 적용 함수: 구분 열에 따라 입금(옅은 하늘색), 출금(옅은 핑크색) 적용
     def highlight_type(val):
       if val == "입금":
         return "background-color: #e0f2fe; color: #0369a1; font-weight: bold;"
@@ -404,7 +359,7 @@ with st.container(border=True):
     event = st.dataframe(
         styled_df,
         use_container_width=True,
-        height=400,
+        height=380,
         column_config={
             "id": st.column_config.NumberColumn("ID"),
             "date": st.column_config.DateColumn("날짜", format="YYYY-MM-DD"),
@@ -420,7 +375,6 @@ with st.container(border=True):
         selection_mode="single-cell",
     )
 
-    # 클릭된 위치 정보 파싱
     selection = event.selection
     clicked_idx = None
 
