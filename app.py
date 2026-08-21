@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 import pandas as pd
 import streamlit as st
-from supabase import Client, create_client
+from supabase import create_client
 
 # ==========================================
 # 1. 페이지 기본 설정 및 CSS
@@ -24,15 +24,12 @@ st.markdown(
         padding-right: 0.8rem !important;
         max-width: 100% !important;
     }
-    
     body, [data-testid="stAppViewContainer"] {
         background-color: #f8fafc !important;
         color: #0f172a !important;
         font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+    header, footer { visibility: hidden; }
 
     .app-header {
         background-color: #0f172a;
@@ -98,17 +95,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # ==========================================
-# 2. Supabase DB 연동
+# 2. Supabase DB 연동 (캐시 안전 처리)
 # ==========================================
-@st.cache_resource
-def init_supabase() -> Client:
+def get_supabase():
   url = "https://whunucledtdqtxjqyoyg.supabase.co"
   key = "sb_publishable_gwv-otmc5S9ytdHRViA1uA_8HUaY68d"
   return create_client(url, key)
 
 
-supabase = init_supabase()
+supabase = get_supabase()
 
 
 def fetch_data():
@@ -122,17 +119,49 @@ def fetch_data():
     )
     df_res = pd.DataFrame(response.data)
 
-    if not df_res.empty:
-      if "description" not in df_res.columns:
-        df_res["description"] = ""
-
-      df_res["description"] = (
-          df_res["description"].fillna("").astype(str).str.strip()
+    if df_res.empty:
+      return pd.DataFrame(
+          columns=["id", "date", "type", "description", "amount"]
       )
+
+    # 컬럼 표준화
+    possible_descs = [
+        "description",
+        "note",
+        "memo",
+        "details",
+        "content",
+        "title",
+    ]
+    found_desc = False
+    for col in possible_descs:
+      if col in df_res.columns:
+        df_res["description"] = df_res[col]
+        found_desc = True
+        break
+    if not found_desc:
+      df_res["description"] = ""
+
+    df_res["description"] = (
+        df_res["description"].fillna("").astype(str).str.strip()
+    )
+    df_res["amount"] = (
+        pd.to_numeric(df_res["amount"], errors="coerce").fillna(0).astype(int)
+    )
+    df_res["type"] = df_res["type"].fillna("출금").astype(str)
+
+    # 날짜 예외 안전 처리
+    def clean_date(d):
+      try:
+        return str(d)[:10]
+      except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+    df_res["date"] = df_res["date"].apply(clean_date)
 
     return df_res
   except Exception as e:
-    st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+    st.error(f"데이터 조회 중 오류: {e}")
     return pd.DataFrame(columns=["id", "date", "type", "description", "amount"])
 
 
@@ -154,8 +183,10 @@ st.markdown(
 
 df = fetch_data()
 
-total_in = df[df["type"] == "입금"]["amount"].sum() if not df.empty else 0
-total_out = df[df["type"] == "출금"]["amount"].sum() if not df.empty else 0
+total_in = int(df[df["type"] == "입금"]["amount"].sum()) if not df.empty else 0
+total_out = (
+    int(df[df["type"] == "출금"]["amount"].sum()) if not df.empty else 0
+)
 balance = total_in - total_out
 
 c1, c2, c3 = st.columns(3)
@@ -202,7 +233,7 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "입금",
                 "description": tx_desc,
-                "amount": tx_amount,
+                "amount": int(tx_amount),
             }).execute()
             st.rerun()
           else:
@@ -214,7 +245,7 @@ with tab_input:
                 "date": str(tx_date),
                 "type": "출금",
                 "description": tx_desc,
-                "amount": tx_amount,
+                "amount": int(tx_amount),
             }).execute()
             st.rerun()
           else:
@@ -227,14 +258,14 @@ with tab_select:
     if sel is not None:
       try:
         default_date = datetime.strptime(
-            str(sel["date"])[:10], "%Y-%m-%d"
+            str(sel.get("date", ""))[:10], "%Y-%m-%d"
         ).date()
       except Exception:
         default_date = datetime.now().date()
 
-      default_desc = str(sel["description"])
-      default_type = "입금" if "입금" in str(sel["type"]) else "출금"
-      default_amount = int(sel["amount_val"])
+      default_desc = str(sel.get("description", ""))
+      default_type = "입금" if "입금" in str(sel.get("type", "")) else "출금"
+      default_amount = int(sel.get("amount", 0))
 
       sc1, sc2 = st.columns(2)
       with sc1:
@@ -257,7 +288,7 @@ with tab_select:
               "date": str(edit_date),
               "type": edit_type,
               "description": edit_desc,
-              "amount": edit_amount,
+              "amount": int(edit_amount),
           }).eq("id", int(sel["id"])).execute()
           st.session_state.selected_row = None
           st.success("수정 완료!")
@@ -296,8 +327,6 @@ with tab_data:
             mime="application/json",
         )
       st.write("---")
-    else:
-      st.info("현재 저장된 거래 내역이 없습니다. 백업 파일(.json)을 아래에 올려 복원하세요.")
 
     uploaded_file = st.file_uploader(
         "📂 복원 파일 선택 (.json)", type=["json"]
@@ -313,32 +342,47 @@ with tab_data:
         else:
           records = []
 
-        # DB 구조(description, date, type, amount)에 정확히 맞춘 포맷팅
         formatted_records = []
         for r in records:
+          # 적요 값 필드 통합 검사
           desc_val = (
-              r.get("note")
-              or r.get("description")
+              r.get("description")
+              or r.get("note")
               or r.get("memo")
               or r.get("details")
               or ""
           )
+
+          # 금액 형변환 예외 처리
+          try:
+            amt_val = int(
+                float(str(r.get("amount", 0)).replace(",", "").strip())
+            )
+          except Exception:
+            amt_val = 0
+
+          # 날짜 포맷팅
+          raw_date = str(r.get("date", datetime.now().strftime("%Y-%m-%d")))[
+              :10
+          ]
+
           formatted_records.append({
-              "date": str(r.get("date"))[:10],
-              "type": r.get("type", "출금"),
+              "date": raw_date,
+              "type": str(r.get("type", "출금")),
               "description": str(desc_val),
-              "amount": int(r.get("amount", 0)),
+              "amount": amt_val,
           })
 
         if formatted_records:
-          supabase.table("transactions").delete().neq("id", 0).execute()
+          # 기존 모든 데이터 삭제 후 일괄 보복원
+          supabase.table("transactions").delete().neq("id", -1).execute()
           supabase.table("transactions").insert(formatted_records).execute()
-          st.success("복원 완료!")
+          st.success("복원 완벽 성공!")
           st.rerun()
         else:
-          st.error("복원할 데이터 형식이 올바르지 않습니다.")
+          st.error("복원할 데이터 구조가 비어있거나 다릅니다.")
       except Exception as e:
-        st.error(f"복원 실패: {e}")
+        st.error(f"복원 중 오류 발생: {e}")
 
 st.write("")
 
@@ -354,83 +398,95 @@ with st.container(border=True):
   )
 
   if not df.empty:
-    df_calc = df.sort_values(by=["date", "id"], ascending=[True, True]).copy()
-    df_calc["amount_val"] = df_calc["amount"]
+    try:
+      # 누적 잔액 계산 (날짜/ID 기준 오름차순 정렬)
+      df_calc = df.sort_values(
+          by=["date", "id"], ascending=[True, True]
+      ).copy()
 
-    df_calc["signed_amount"] = df_calc.apply(
-        lambda r: r["amount"] if r["type"] == "입금" else -r["amount"], axis=1
-    )
-    df_calc["balance"] = df_calc["signed_amount"].cumsum()
+      df_calc["signed_amount"] = df_calc.apply(
+          lambda r: r["amount"] if r["type"] == "입금" else -r["amount"], axis=1
+      )
+      df_calc["balance"] = df_calc["signed_amount"].cumsum()
 
-    df_display = (
-        df_calc.sort_values(by=["date", "id"], ascending=[False, False])
-        .reset_index(drop=True)
-        .copy()
-    )
+      # 화면용 표시 (내림차순 정렬)
+      df_display = (
+          df_calc.sort_values(by=["date", "id"], ascending=[False, False])
+          .reset_index(drop=True)
+          .copy()
+      )
 
-    df_display["type_display"] = df_display["type"]
-    df_display["amount_display"] = df_display.apply(
-        lambda r: f"+ {r['amount']:,} 원"
-        if r["type"] == "입금"
-        else f"- {r['amount']:,} 원",
-        axis=1,
-    )
+      df_display["amount_display"] = df_display.apply(
+          lambda r: f"+ {r['amount']:,} 원"
+          if r["type"] == "입금"
+          else f"- {r['amount']:,} 원",
+          axis=1,
+      )
 
-    view_df = df_display[[
-        "id",
-        "date",
-        "type_display",
-        "description",
-        "amount_display",
-        "balance",
-    ]].copy()
+      # 표에 보여줄 데이터 프레임 생성
+      view_df = pd.DataFrame({
+          "id": df_display["id"],
+          "date": df_display["date"],
+          "type": df_display["type"],
+          "description": df_display["description"],
+          "amount_display": df_display["amount_display"],
+          "balance": df_display["balance"],
+      })
 
-    def highlight_type(val):
-      if val == "입금":
-        return "background-color: #e0f2fe; color: #0369a1; font-weight: bold;"
-      elif val == "출금":
-        return "background-color: #ffe4e6; color: #be123c; font-weight: bold;"
-      return ""
+      # 스타일 지정
+      def highlight_type(val):
+        if val == "입금":
+          return (
+              "background-color: #e0f2fe; color: #0369a1; font-weight: bold;"
+          )
+        elif val == "출금":
+          return (
+              "background-color: #ffe4e6; color: #be123c; font-weight: bold;"
+          )
+        return ""
 
-    styled_df = view_df.style.map(highlight_type, subset=["type_display"])
+      styled_df = view_df.style.map(highlight_type, subset=["type"])
 
-    event = st.dataframe(
-        styled_df,
-        use_container_width=True,
-        height=380,
-        column_config={
-            "id": st.column_config.NumberColumn("ID"),
-            "date": st.column_config.DateColumn("날짜", format="YYYY-MM-DD"),
-            "type_display": st.column_config.TextColumn("구분"),
-            "description": st.column_config.TextColumn("적요"),
-            "amount_display": st.column_config.TextColumn("금액"),
-            "balance": st.column_config.NumberColumn(
-                "잔액 (원)", format="%d 원"
-            ),
-        },
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-cell",
-    )
+      # 표 출력
+      event = st.dataframe(
+          styled_df,
+          use_container_width=True,
+          height=400,
+          column_config={
+              "id": st.column_config.NumberColumn("ID", width="small"),
+              "date": st.column_config.TextColumn("날짜"),
+              "type": st.column_config.TextColumn("구분"),
+              "description": st.column_config.TextColumn("적요"),
+              "amount_display": st.column_config.TextColumn("금액"),
+              "balance": st.column_config.NumberColumn(
+                  "잔액 (원)", format="%d 원"
+              ),
+          },
+          hide_index=True,
+          on_select="rerun",
+          selection_mode="single-row",
+      )
 
-    selection = event.selection
-    clicked_idx = None
-
-    if selection and "cells" in selection and len(selection["cells"]) > 0:
-      cell = selection["cells"][0]
-      if isinstance(cell, (list, tuple)):
-        clicked_idx = cell[0]
-      elif isinstance(cell, dict):
-        clicked_idx = cell.get("row")
-
-    if clicked_idx is not None and clicked_idx < len(df_display):
-      selected_data = df_display.iloc[clicked_idx].to_dict()
-
+      # 행 클릭 감지
       if (
-          st.session_state.selected_row is None
-          or st.session_state.selected_row.get("id") != selected_data["id"]
+          event
+          and hasattr(event, "selection")
+          and event.selection
+          and "rows" in event.selection
       ):
-        st.session_state.selected_row = selected_data
-        st.rerun()
+        rows = event.selection["rows"]
+        if rows:
+          idx = rows[0]
+          if idx < len(df_display):
+            clicked_row = df_display.iloc[idx].to_dict()
+            if (
+                st.session_state.selected_row is None
+                or st.session_state.selected_row.get("id") != clicked_row["id"]
+            ):
+              st.session_state.selected_row = clicked_row
+              st.rerun()
+
+    except Exception as e:
+      st.error(f"목록 처리 중 오류: {e}")
   else:
     st.info("표시할 거래 내역이 없습니다.")
