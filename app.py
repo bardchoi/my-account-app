@@ -5,7 +5,7 @@ import streamlit as st
 from supabase import Client, create_client
 
 # ==========================================
-# 1. 페이지 기본 설정 및 모바일 최적화 CSS
+# 1. 페이지 기본 설정 및 CSS
 # ==========================================
 st.set_page_config(
     page_title="입출금 관리 프로그램",
@@ -17,7 +17,6 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    /* 여백 최소화 및 모바일 대응 */
     .block-container {
         padding-top: 0.8rem !important;
         padding-bottom: 1rem !important;
@@ -35,7 +34,6 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* 상단 헤더 */
     .app-header {
         background-color: #0f172a;
         color: #f8fafc;
@@ -56,7 +54,6 @@ st.markdown(
         border-radius: 10px;
     }
 
-    /* 요약 카드 디자인 */
     .stat-card {
         border: 1px solid #cbd5e1;
         border-radius: 8px;
@@ -81,7 +78,6 @@ st.markdown(
         margin-bottom: 6px;
     }
 
-    /* 버튼 글자 짤림 방지 및 모바일 자동 크기 조절 */
     .stButton > button {
         border-radius: 6px !important;
         font-weight: 600 !important;
@@ -92,7 +88,6 @@ st.markdown(
         padding: 0 8px !important;
     }
 
-    /* 데이터프레임 스타일 */
     .stDataFrame {
         background-color: #ffffff;
         border: 1px solid #cbd5e1;
@@ -125,7 +120,27 @@ def fetch_data():
         .order("id", desc=True)
         .execute()
     )
-    return pd.DataFrame(response.data)
+    df_res = pd.DataFrame(response.data)
+
+    if not df_res.empty:
+      # 적요 컬럼 명칭 보정 (description, memo, content 등 대응)
+      desc_col = None
+      for col in ["description", "memo", "content", "note", "desc"]:
+        if col in df_res.columns:
+          desc_col = col
+          break
+
+      if desc_col and desc_col != "description":
+        df_res["description"] = df_res[desc_col]
+      elif "description" not in df_res.columns:
+        df_res["description"] = ""
+
+      # None이나 빈 문자열 처리
+      df_res["description"] = (
+          df_res["description"].fillna("").astype(str).str.strip()
+      )
+
+    return df_res
   except Exception as e:
     st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
     return pd.DataFrame(columns=["id", "date", "type", "description", "amount"])
@@ -173,7 +188,7 @@ with c3:
 st.write("")
 
 # ==========================================
-# 4. 모바일/PC 겸용 컨트롤 영역 (탭 방식 적용)
+# 4. 모바일/PC 겸용 컨트롤 영역
 # ==========================================
 tab_input, tab_select, tab_data = st.tabs(
     ["📥 신규 입력", "✏️ 선택 항목 수정/삭제", "⚙️ 데이터 관리"]
@@ -263,7 +278,7 @@ with tab_select:
           st.session_state.selected_row = None
           st.rerun()
     else:
-      st.info("👇 아래 거래 내역 목록에서 수정할 항목을 터치/클릭하세요.")
+      st.info("👇 아래 거래 내역 목록에서 수정할 항목을 클릭하세요.")
 
 # --- [탭 3: 데이터 관리] ---
 with tab_data:
