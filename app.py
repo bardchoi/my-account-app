@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# 눈이 편안한 아이케어 파스텔 테마 & 전체 고정 스크롤 CSS
 st.markdown(
     """
 <style>
@@ -90,7 +89,6 @@ st.markdown(
         margin-bottom: 8px;
     }
 
-    /* Streamlit 요소 커스텀 */
     div[data-baseweb="input"] {
         background-color: #f8fafc !important;
         border-color: #cbd5e1 !important;
@@ -104,7 +102,6 @@ st.markdown(
         width: 100% !important;
     }
     
-    /* 데이터프레임 고정 스크롤 */
     .stDataFrame {
         background-color: #ffffff;
         border: 1px solid #cbd5e1;
@@ -115,9 +112,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # ==========================================
-# 2. Supabase 연동 설정 (직접 연결 지정)
+# 2. Supabase 연동 설정
 # ==========================================
 @st.cache_resource
 def init_supabase() -> Client:
@@ -164,7 +160,7 @@ total_in = df[df["type"] == "입금"]["amount"].sum() if not df.empty else 0
 total_out = df[df["type"] == "출금"]["amount"].sum() if not df.empty else 0
 balance = total_in - total_out
 
-# 상단 현황 카드 3개
+# 상단 현황 카드
 c1, c2, c3 = st.columns(3)
 with c1:
   st.markdown(
@@ -197,18 +193,18 @@ with c3:
       unsafe_allow_html=True,
   )
 
-st.write("")  # 간격 조정
+st.write("")
 
-# ==========================================
-# 4. 중앙 제어 컨트롤 영역 (비대칭 비율: 1.8 : 1.4 : 0.8)
-# ==========================================
-col_input, col_select, col_data = st.columns([1.8, 1.4, 0.8])
-
-# Session state 초기화
+# Session State 초기화
 if "selected_id" not in st.session_state:
   st.session_state.selected_id = None
 
-# --- [1열: 신규 거래 입력 (넓은 영역 & 적요 칸 확장)] ---
+# ==========================================
+# 4. 중앙 제어 컨트롤 영역
+# ==========================================
+col_input, col_select, col_data = st.columns([1.8, 1.4, 0.8])
+
+# --- [1열: 신규 거래 입력] ---
 with col_input:
   st.markdown(
       '<div class="panel-title">📥 신규 거래 입력</div>',
@@ -259,7 +255,7 @@ with col_input:
       else:
         st.warning("적요와 금액을 확인해주세요.")
 
-# --- [2열: 선택 항목 관리 (확장 영역)] ---
+# --- [2열: 선택 항목 관리 (목록 클릭 자동 연동)] ---
 with col_select:
   st.markdown(
       '<div class="panel-title">📊 선택 항목 관리</div>',
@@ -274,28 +270,41 @@ with col_select:
         )
         for _, row in df.iterrows()
     }
+    option_keys = list(options.keys())
+
+    # 테이블에서 선택된 ID가 있다면 기본 인덱스로 자동 연동
+    default_idx = 0
+    if (
+        st.session_state.selected_id
+        and st.session_state.selected_id in option_keys
+    ):
+      default_idx = option_keys.index(st.session_state.selected_id)
+
     selected_option = st.selectbox(
         "항목 선택",
-        options=list(options.keys()),
+        options=option_keys,
+        index=default_idx,
         format_func=lambda x: options[x],
         label_visibility="collapsed",
+        key="select_box_item",
     )
 
     sel_btn1, sel_btn2 = st.columns(2)
     with sel_btn1:
       if st.button("✏️ 거래 수정"):
         st.session_state.edit_id = selected_option
-        st.info("아래 테이블에서 바로 수정이 가능합니다.")
+        st.info("아래 테이블의 데이터를 직접 수정할 수 있습니다.")
     with sel_btn2:
       if st.button("🗑️ 거래 삭제"):
         supabase.table("transactions").delete().eq(
             "id", selected_option
         ).execute()
+        st.session_state.selected_id = None
         st.rerun()
   else:
     st.info("등록된 거래 내역이 없습니다.")
 
-# --- [3열: 데이터 관리 (컴팩트 영역)] ---
+# --- [3열: 데이터 관리] ---
 with col_data:
   st.markdown(
       '<div class="panel-title">⚙️ 데이터 관리</div>',
@@ -334,13 +343,13 @@ with col_data:
         except Exception as e:
           st.error(f"복원 실패: {e}")
 
-st.write("")  # 간격 조정
+st.write("")
 
 # ==========================================
-# 5. 하단 거래 내역 테이블 (내부 스크롤 고정)
+# 5. 하단 거래 내역 테이블 (선택 시 상단 자동 선택 연동)
 # ==========================================
 st.markdown(
-    '<div class="panel-title">📋 거래 내역 목록</div>',
+    '<div class="panel-title">📋 거래 내역 목록 (행을 클릭하면 위쪽 선택 항목으로 지정됩니다)</div>',
     unsafe_allow_html=True,
 )
 
@@ -355,21 +364,81 @@ if not df.empty:
       by=["date", "id"], ascending=[False, False]
   ).copy()
 
-  display_df = df_display[
-      ["date", "type", "description", "amount", "balance"]
-  ].copy()
-  display_df.columns = ["날짜", "구분", "적요", "금액 (원)", "잔액 (원)"]
+  # 수정 모드 활성화 여부 체크
+  is_editing = getattr(st.session_state, "edit_id", None) is not None
 
-  st.dataframe(
-      display_df,
-      use_container_width=True,
-      height=380,
-      column_config={
-          "금액 (원)": st.column_config.NumberColumn(format="%d 원"),
-          "잔액 (원)": st.column_config.NumberColumn(format="%d 원"),
-          "날짜": st.column_config.DateColumn(format="YYYY-MM-DD"),
-      },
-      hide_index=True,
-  )
+  if is_editing:
+    st.caption(
+        "✏️ **수정 모드**: 테이블에서 수정한 뒤 아래 '저장' 버튼을 누르세요."
+    )
+    edited_df = st.data_editor(
+        df_display[["id", "date", "type", "description", "amount"]],
+        use_container_width=True,
+        height=380,
+        disabled=["id"],
+        column_config={
+            "id": st.column_config.NumberColumn("ID"),
+            "date": st.column_config.DateColumn("날짜", format="YYYY-MM-DD"),
+            "type": st.column_config.SelectboxColumn(
+                "구분", options=["입금", "출금"]
+            ),
+            "description": st.column_config.TextColumn("적요"),
+            "amount": st.column_config.NumberColumn(
+                "금액 (원)", format="%d 원"
+            ),
+        },
+        hide_index=True,
+        key="data_editor",
+    )
+
+    col_s1, col_s2 = st.columns([1, 5])
+    with col_s1:
+      if st.button("💾 수정 내용 저장", type="primary"):
+        for _, row in edited_df.iterrows():
+          supabase.table("transactions").update({
+              "date": str(row["date"]),
+              "type": row["type"],
+              "description": row["description"],
+              "amount": row["amount"],
+          }).eq("id", row["id"]).execute()
+        st.session_state.edit_id = None
+        st.success("수정 완료!")
+        st.rerun()
+    with col_s2:
+      if st.button("취소"):
+        st.session_state.edit_id = None
+        st.rerun()
+  else:
+    # 클릭 선택 가능한 테이블
+    event = st.dataframe(
+        df_display[["id", "date", "type", "description", "amount", "balance"]],
+        use_container_width=True,
+        height=380,
+        column_config={
+            "id": st.column_config.NumberColumn("ID"),
+            "amount": st.column_config.NumberColumn(
+                "금액 (원)", format="%d 원"
+            ),
+            "balance": st.column_config.NumberColumn(
+                "잔액 (원)", format="%d 원"
+            ),
+            "date": st.column_config.DateColumn("날짜", format="YYYY-MM-DD"),
+            "type": st.column_config.TextColumn("구분"),
+            "description": st.column_config.TextColumn("적요"),
+        },
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+
+    # 행 클릭 시 선택 항목 관리 드롭다운으로 선택값 전달
+    selected_rows = event.selection.get("rows", [])
+    if selected_rows:
+      clicked_row_idx = selected_rows[0]
+      selected_tx_id = df_display.iloc[clicked_row_idx]["id"]
+
+      if st.session_state.selected_id != selected_tx_id:
+        st.session_state.selected_id = selected_tx_id
+        st.rerun()
 else:
   st.info("표시할 거래 내역이 없습니다.")
